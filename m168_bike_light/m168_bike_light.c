@@ -11,19 +11,24 @@
 *  - 8 LEDs conneced on PORT D
 *  - A button on PC0
 *
+* Timer0 used for debounce
+* Timer1 takes place of delay functions
+* Button cycles through modes
+* Final mode is sleep
+* Pin interrupt wakes from sleep
+*
 * place URL here
 */
 #define F_CPU 1000000L
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
-#include <util/delay.h>
 
 /******************************
 * Pin and Setting Definitions *
 ******************************/
 
-//LED deffinitions
+//LED definitions
 #define ledPort		PORTD
 #define ledDDR		DDRD
 
@@ -33,17 +38,16 @@
 #define KEY_PIN		PINC	//Needed for debounce ISR
 #define KEY0		0 	//PC0
 
-//Milliseconds delay in sweep mode
-#define sweepDelay	30
-
-//Milliseconds delay in flasher mode
-#define flasherDelay	110
+//Delay values used with Timer1
+//  1 ms = 15.625
+#define sweepDelay	469	//About 30ms
+#define flashDelay	1719	//About 110ms
 
 //State definitions
 #define sweep		0
 #define xor		1
 #define flash		2
-#define	solid		3
+#define	alternate	3
 #define sleep		4
 
 /************
@@ -51,7 +55,13 @@
 ************/
 
 //State machine variable
-unsigned char state = sweep;
+unsigned char state;
+
+//Delay flag used by interrupt
+volatile unsigned char timer = 0;
+
+//Variable used as LED port buffer
+unsigned char tracker = 0;
 
 //Debounce
 unsigned char debounce_cnt = 0;
@@ -64,10 +74,11 @@ unsigned char key_state;
 
 void initIO(void);
 void timer0_overflow(void);
-void delay_ms(int cnt);
+void timer1_compare(unsigned int cycle_count);
+void timer1_stop(void);
 unsigned char get_key_press( unsigned char key_mask );
-void sweep(void);
-void flasher(void);
+void toggle_led(void);
+//void sweep(void);
 
 /************
 * Functions *
@@ -83,6 +94,32 @@ void initIO(void)
   KEY_PORT |= (1<<KEY0);	//Enable internal pull-up resistor of PC0
 }
 
+//Initialize the state passed in as a variable
+void initState(unsigned char state)
+{
+  switch (state)
+  {
+    case sweep:
+      break;
+
+    case xor:
+      ledPort = 0xAA;
+      timer1_compare(flashDelay);
+      break;
+
+    case flash:
+      ledPort = 0xFF;
+      timer1_compare(flashDelay);
+      break;
+
+    case alternate:
+      break;
+
+    case sleep:
+      break;
+  }
+}
+
 //Setup a timer for button debounce
 void timer0_overflow(void)
 {
@@ -93,10 +130,22 @@ void timer0_overflow(void)
   sei();
 }
 
-//Delay a number of milliseconds
-void delay_ms(int cnt)
+//Setup a 1 Hz timer
+void timer1_compare(unsigned int cycle_count)
 {
-  while (cnt-- > 0) _delay_ms(1);
+  cli();			//Disable global interrupts
+  TCCR1B |= 1<<CS11 | 1<<CS10;	//Divide by 64
+  OCR1A = cycle_count;		//Count cycles for timed interrupt
+  TCCR1B |= 1<<WGM12;		//Put Timer/Counter1 in CTC mode
+  TIMSK1 |= 1<<OCIE1A;		//enable timer compare interrupt
+  sei();			//Enable global interrupts
+}
+
+//Stop timer 1
+void timer1_stop(void)
+{
+  //Set TCCR1B back to defaults to clear timer source and mode
+  TCCR1B &= ~( (WGM12) | (1<<CS12) | (1<<CS11) | (1<<CS10) );
 }
 
 //Danni Debounce Function
@@ -109,7 +158,13 @@ unsigned char get_key_press( unsigned char key_mask )
   return key_mask;
 }
 
-//Sweep one lighted LED back and forth
+//Toggles pins on ledPort
+void toggle_led(void)
+{
+  ledPort ^= 0xFF;
+}
+
+/*Sweep one lighted LED back and forth
 void sweep(void)
 {
   //Start with Least Significant Bit illuminated
@@ -138,41 +193,50 @@ void sweep(void)
     }
   }
 }
-
-//Flash in an XOR pattern
-void flasher(void)
-{
-  unsigned char tracker = 0xAA;	//Setup starting value
-  ledPort = tracker;		//Lights every-other LED
-  delay_ms(flasherDelay);	//wait a bit
-
-  while (1)	//Loop forever
-  {
-    tracker ^= 0xFF;		//Toggle all values
-    ledPort = tracker;		//Output new values to LEDs
-    delay_ms(flasherDelay);	//wait a bit
-    if( get_key_press( 1<<KEY0 )) return;	//Leave function on button press
-  }
-}
+*/
 
 int main(void)
 {
  
   initIO();		//Setup LED and Button pins
   timer0_overflow();	//Setup the button debounce timer
+  state = xor;		//Set default state
+  initState(state);	//Setup initial state
 
   while(1) 
   {
-    switch (state)
-    {
-      case sweep:
-        
-        break;
+    //If interrupt set the timer flag act on that
+    if (timer) {
+      switch (state)
+      {
+        case sweep:
+          break;
 
-    //sweep();		//Show sweeping pattern
-    //flasher();	//Show flashing pattern
-  
-    {
+        case xor:
+          toggle_led();
+          break;
+
+        case flash:
+          toggle_led();
+          break;
+
+        case alternate:
+          break;
+
+        case sleep:
+          break;
+      }
+      timer = 0;
+    }
+
+    if( get_key_press( 1<<KEY0 )) {
+      timer1_stop();	//Halt the delay timer
+      timer = 0;	//Clear delay timer flag
+      
+      //Increment the state machine
+      if (++state > flash) state = xor;
+      initState(state);
+    }
   }
 }
 
@@ -194,4 +258,9 @@ ISR(TIMER0_OVF_vect)           // every 10ms
   i &= ct0 & ct1;              // count until roll over ?
   key_state ^= i;              // then toggle debounced state
   key_press |= key_state & i;  // 0->1: key press detect
+}
+
+ISR(TIMER1_COMPA_vect)		//Interrupt Service Routine
+{
+  timer = 1;
 }
