@@ -23,7 +23,7 @@
 * Pin and Setting Definitions *
 ******************************/
 
-//LED deffinitions
+//LED definitions
 #define ledPort		PORTD
 #define ledDDR		DDRD
 
@@ -69,7 +69,7 @@ void flasher(void);
 * Functions *
 ************/
 
-//Setup the I/O for the LEDs
+//Setup the I/O for the LEDs and button
 void initIO(void)
 {
   ledDDR |= 0xFF;		//Set PortD pins as an outputs
