@@ -41,6 +41,7 @@
 //Delay values used with Timer1
 //  1 ms = 15.625
 #define sweepDelay	469	//About 30ms
+#define xorDelay	3125	//About 200ms
 #define flashDelay	1719	//About 110ms
 
 //State definitions
@@ -118,8 +119,8 @@ void initState(unsigned char state)
       break;
 
     case xor:
-      ledPort = 0xAA;
-      start_timer1_compare(flashDelay);
+      ledPort = 0x0F;
+      start_timer1_compare(xorDelay);
       break;
 
     case flash:
