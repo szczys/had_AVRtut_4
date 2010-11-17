@@ -60,8 +60,10 @@ unsigned char state;
 //Delay flag used by interrupt
 volatile unsigned char timer = 0;
 
-//Variable used as LED port buffer
-unsigned char tracker = 0;
+//Sweep variables
+unsigned char tracker;
+unsigned char direction;
+
 
 //Debounce
 unsigned char debounce_cnt = 0;
@@ -73,8 +75,10 @@ unsigned char key_state;
 *************/
 
 void initIO(void);
+void initTimer1_modes(void);
+void initState(unsigned char state);
 void timer0_overflow(void);
-void timer1_compare(unsigned int cycle_count);
+void start_timer1_compare(unsigned int cycle_count);
 void timer1_stop(void);
 unsigned char get_key_press( unsigned char key_mask );
 void toggle_led(void);
@@ -94,22 +98,33 @@ void initIO(void)
   KEY_PORT |= (1<<KEY0);	//Enable internal pull-up resistor of PC0
 }
 
+void initTimer1_modes(void)
+{
+  cli();			//Disable global interrupts
+  TIMSK1 |= 1<<OCIE1A;		//enable timer compare interrupt
+  TCCR1B |= 1<<WGM12;		//Put Timer/Counter1 in CTC mode
+  sei();			//Enable global interrupts
+}
+
 //Initialize the state passed in as a variable
 void initState(unsigned char state)
 {
   switch (state)
   {
     case sweep:
+      tracker = 0x01;	//Starting bitmask
+      direction = 1;	//Starting direction (1=ascending, 0=descending)
+      start_timer1_compare(sweepDelay);
       break;
 
     case xor:
       ledPort = 0xAA;
-      timer1_compare(flashDelay);
+      start_timer1_compare(flashDelay);
       break;
 
     case flash:
       ledPort = 0xFF;
-      timer1_compare(flashDelay);
+      start_timer1_compare(flashDelay);
       break;
 
     case alternate:
@@ -131,13 +146,11 @@ void timer0_overflow(void)
 }
 
 //Setup a 1 Hz timer
-void timer1_compare(unsigned int cycle_count)
+void start_timer1_compare(unsigned int cycle_count)
 {
   cli();			//Disable global interrupts
-  TCCR1B |= 1<<CS11 | 1<<CS10;	//Divide by 64
   OCR1A = cycle_count;		//Count cycles for timed interrupt
-  TCCR1B |= 1<<WGM12;		//Put Timer/Counter1 in CTC mode
-  TIMSK1 |= 1<<OCIE1A;		//enable timer compare interrupt
+  TCCR1B |= 1<<CS11 | 1<<CS10;	//Divide by 64
   sei();			//Enable global interrupts
 }
 
@@ -145,7 +158,11 @@ void timer1_compare(unsigned int cycle_count)
 void timer1_stop(void)
 {
   //Set TCCR1B back to defaults to clear timer source and mode
-  TCCR1B &= ~( (WGM12) | (1<<CS12) | (1<<CS11) | (1<<CS10) );
+
+  cli();
+  TCCR1B &= ~( (1<<CS11) | (1<<CS10) );
+  TCNT1 = 0;			//Reset counter so we start counting at 0 next time
+  sei();
 }
 
 //Danni Debounce Function
@@ -200,7 +217,9 @@ int main(void)
  
   initIO();		//Setup LED and Button pins
   timer0_overflow();	//Setup the button debounce timer
-  state = xor;		//Set default state
+  initTimer1_modes();	//Setup the delay timer
+
+  state = sweep;	//Set default state
   initState(state);	//Setup initial state
 
   while(1) 
@@ -210,6 +229,12 @@ int main(void)
       switch (state)
       {
         case sweep:
+          if (direction) tracker <<= 1;
+          else tracker >>= 1;
+
+          if ((tracker == 0x01) | (tracker == 0x80)) direction ^= 1;
+
+          ledPort = tracker;
           break;
 
         case xor:
@@ -234,7 +259,7 @@ int main(void)
       timer = 0;	//Clear delay timer flag
       
       //Increment the state machine
-      if (++state > flash) state = xor;
+      if (++state > flash) state = sweep;
       initState(state);
     }
   }
