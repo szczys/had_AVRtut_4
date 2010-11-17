@@ -23,6 +23,8 @@
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
+#include <avr/sleep.h>
+#include <util/delay.h>
 
 /******************************
 * Pin and Setting Definitions *
@@ -48,8 +50,7 @@
 #define sweep		0
 #define xor		1
 #define flash		2
-#define	alternate	3
-#define sleep		4
+#define sleep		3
 
 /************
 * Variables *
@@ -83,7 +84,8 @@ void start_timer1_compare(unsigned int cycle_count);
 void timer1_stop(void);
 unsigned char get_key_press( unsigned char key_mask );
 void toggle_led(void);
-//void sweep(void);
+void sleep_now(void);
+void init_pcint(void);
 
 /************
 * Functions *
@@ -128,10 +130,12 @@ void initState(unsigned char state)
       start_timer1_compare(flashDelay);
       break;
 
-    case alternate:
-      break;
-
     case sleep:
+      ledPort = 0x00;	//Shut off LEDs
+
+      sleep_now();	//Put chip to sleep, PCINT8 will wake it
+
+      timer = 1; 	//Set timer flag. This will occur after waking up.
       break;
   }
 }
@@ -182,36 +186,28 @@ void toggle_led(void)
   ledPort ^= 0xFF;
 }
 
-/*Sweep one lighted LED back and forth
-void sweep(void)
+//Put microcontroller in Power Down sleep mode
+void sleep_now(void)
 {
-  //Start with Least Significant Bit illuminated
-  unsigned char tracker = 0x01;	//Setup starting value
-  ledPort = tracker;		//Output new values to LEDs			
-  delay_ms(sweepDelay);		//wait a bit
 
-  while(1)	//Loop forever
-  {
-    //Shift bits left until 0b10000000 is reached
-    while(tracker < 0x80)
-    {
-      tracker <<= 1;		//Shift bits
-      ledPort = tracker;	//Output new values to LEDs
-      delay_ms(sweepDelay);	//wait a bit
-      if( get_key_press( 1<<KEY0 )) return;	//Leave function on button press
-    }
+  cli();
+  _delay_ms(500);		//This is a hack, not sure why it's needed
+				//  but without it, sleep works unexpectedly
+  init_pcint(); 		//setup pin change interrupt
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN);	//Power down the chip (sleep)
+  sei();
 
-    //Shift bits right until 0b00000001 is reached
-    while(tracker > 0x01)
-    {
-      tracker >>= 1;		//Shift bits
-      ledPort = tracker;	//Output new values to LEDs
-      delay_ms(sweepDelay);	//wait a bit
-      if( get_key_press( 1<<KEY0 )) return;	//Leave function on button press
-    }
-  }
+  sleep_mode();
+
 }
-*/
+
+//Setup pin change interrupt used to wake from sleep
+void init_pcint(void)
+{
+  PCICR |= 1<<PCIE1;  //Enable Pin Change Interrupt
+  PCMSK1 |= 1<<PCINT8; //Watch for Pin Change on PC0
+      //NOTE:This needs to change if button is connected to a different uC pin
+}
 
 int main(void)
 {
@@ -246,10 +242,10 @@ int main(void)
           toggle_led();
           break;
 
-        case alternate:
-          break;
-
         case sleep:
+          //Arriving here means we just woke up from sleep
+          state = sweep; //Reset state machine
+          initState(state);
           break;
       }
       timer = 0;
@@ -260,7 +256,8 @@ int main(void)
       timer = 0;	//Clear delay timer flag
       
       //Increment the state machine
-      if (++state > flash) state = sweep;
+      if (++state > sleep) state = sweep;
+
       initState(state);
     }
   }
@@ -289,4 +286,12 @@ ISR(TIMER0_OVF_vect)           // every 10ms
 ISR(TIMER1_COMPA_vect)		//Interrupt Service Routine
 {
   timer = 1;
+}
+
+//Pin Change Interrupt
+ISR(PCINT1_vect)
+{
+  sleep_disable();	//Power chip up again
+  PCICR &= ~(1<<PCIE1); //Disable the interrupt so it doesn't keep flagging
+  PCMSK1 &= ~(1<<PCINT8);
 }
