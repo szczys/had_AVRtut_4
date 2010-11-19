@@ -6,7 +6,7 @@
 * ATmega168
 * Blinks 8 LEDs conneced on PORT D
 *
-* place URL here
+* http://hackaday.com/2010/11/19/avr-programming-04-writing-code-etc/
 */
 
 #include <avr/io.h>

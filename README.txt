@@ -2,7 +2,7 @@ hackaday.com
 11/17/10
 
 AVR Programming Tutorial Part 4 examples
-URL GOES HERE
+http://hackaday.com/2010/11/19/avr-programming-04-writing-code-etc/
 
 written by: Mike Szczys (@szczys)
 

@@ -11,7 +11,7 @@
 *  - 8 LEDs conneced on PORT D
 *  - A button on PC0
 *
-* place URL here
+* http://hackaday.com/2010/11/19/avr-programming-04-writing-code-etc/
 */
 #define F_CPU 1000000L
 

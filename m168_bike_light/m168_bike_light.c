@@ -17,7 +17,7 @@
 * Final mode is sleep
 * Pin interrupt wakes from sleep
 *
-* place URL here
+* http://hackaday.com/2010/11/19/avr-programming-04-writing-code-etc/
 */
 #define F_CPU 1000000L
 

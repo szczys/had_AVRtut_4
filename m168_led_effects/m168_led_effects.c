@@ -10,7 +10,7 @@
 * Produces different light patterns using:
 *  - 8 LEDs conneced on PORT D
 *
-* place URL here
+* http://hackaday.com/2010/11/19/avr-programming-04-writing-code-etc/
 */
 #define F_CPU 1000000L
 
